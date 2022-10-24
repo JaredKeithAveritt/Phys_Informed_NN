@@ -1,0 +1,1217 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export 
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var searchAbstract = true;	// search in abstract
+var searchComment = true;	// search in comment
+
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, comment, bibtex)
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/comment
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/comment/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchComment && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'comment') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'comment noshow':rev.className = 'comment show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/comment/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'comment nextshow': rev.className = 'comment';
+	}	
+	
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	closeAllInfo();
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchRev":
+	   searchComment=!searchComment;
+	   redoQS();
+	   break;
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchComment){document.getElementById("opt_searchRev").checked = true;}
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchRev").parentNode.style.display = 'none';}
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; margin: auto 2em; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { width: 100%; empty-cells: show; border-spacing: 0em 0.2em; margin: 1em 0em; border-style: none; }
+th, td { border: 1px gray solid; border-width: 1px 1px; padding: 0.5em; vertical-align: top; text-align: left; }
+th { background-color: #efefef; }
+td + td, th + th { border-left: none; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.comment td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom: 1px gray solid; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchRev" onchange="updateSetting(this)"><label for="opt_searchRev"> include comment</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<thead><tr><th width="20%">Author</th><th width="30%">Title</th><th width="5%">Year</th><th width="30%">Journal/Proceedings</th><th width="10%">Reftype</th><th width="5%">DOI/URL</th></tr></thead>
+<tbody><tr id="Chandrasekaran2019" class="entry">
+	<td>Chandrasekaran, A., Kamal, D., Batra, R., Kim, C., Chen, L. and Ramprasad, R.</td>
+	<td>Solving the electronic structure problem with machine learning <p class="infolinks">[<a href="javascript:toggleInfo('Chandrasekaran2019','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Chandrasekaran2019','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>npj Computational Materials<br/>Vol. 5(1)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1038/s41524-019-0162-7">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Chandrasekaran2019" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Simulations based on solving the Kohn-Sham (KS) equation of density functional theory (DFT) have become a vital component of modern materials and chemical sciences research and development portfolios. Despite its versatility, routine DFT calculations are usually limited to a few hundred atoms due to the computational bottleneck posed by the KS equation. Here we introduce a machine-learning-based scheme to efficiently assimilate the function of the KS equation, and by-pass it to directly, rapidly, and accurately predict the electronic structure of a material or a molecule, given just its atomic configuration. A new rotationally invariant representation is utilized to map the atomic environment around a grid-point to the electron density and local density of states at that grid-point. This mapping is learned using a neural network trained on previously generated reference DFT results at millions of grid-points. The proposed paradigm allows for the high-fidelity emulation of KS DFT, but orders of magnitude faster than the direct solution. Moreover, the machine learning prediction scheme is strictly linear-scaling with system size.</td>
+</tr>
+<tr id="bib_Chandrasekaran2019" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Chandrasekaran2019,
+  author = {Anand Chandrasekaran and Deepak Kamal and Rohit Batra and Chiho Kim and Lihua Chen and Rampi Ramprasad},
+  title = {Solving the electronic structure problem with machine learning},
+  journal = {npj Computational Materials},
+  publisher = {Springer Science and Business Media LLC},
+  year = {2019},
+  volume = {5},
+  number = {1},
+  doi = {https://doi.org/10.1038/s41524-019-0162-7}
+}
+</pre></td>
+</tr>
+<tr id="Ahmadianyazdi2022" class="entry">
+	<td>Ahmadianyazdi, A., Nguyen, N.H.L., Xu, J. and Berry, V.</td>
+	<td>Glucose measurement via Raman spectroscopy of graphene: Principles and operation <p class="infolinks">[<a href="javascript:toggleInfo('Ahmadianyazdi2022','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Ahmadianyazdi2022','comment')">Comment</a>] [<a href="javascript:toggleInfo('Ahmadianyazdi2022','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Nano Research<br/>Vol. 15(10), pp. 8697-8704&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1007/s12274-022-4587-9">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Ahmadianyazdi2022" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The sensitivity of graphene’s Raman characteristics to external perturbations can be exploited for sensing applications. To apply this principle, Raman spectroscopy of graphene in contact with a chemical/biological analyte is recorded to unravel a correlation between analyte’s physical/chemical/biological properties and electronic properties (Fermi energy and dopants level) of graphene. As an example, we demonstrate the principle and operation of glucose measurement using graphene’s Raman spectroscopy, utilizing both affinity and enzymatic detection methods. In the affinity detection, we monitor Raman spectrum of graphene in contact with a glucose containing sample to quantify the attachment of glucose onto 1-pyrene boronic acid (PBA) functionalized graphene. It is revealed that glucose covalent bond to PBA induces n-type doping in graphene and increases its Fermi level following the Hill-Langmuir equation. In the enzymatic detection, we show that graphene’s Fermi energy shifts due to the biocatalytic oxidation of glucose by immobilized glucose oxidase (GOx) enzymes. As a result, graphene becomes p-doped with increasing glucose concentration. We attribute this sensitivity to a re-distribution of ionic charges within the electric double layer (EDL) of graphene upon introducing the glucose molecules. This model explains both our affinity and enzymatic glucose detection experiments. Beyond glucose detection, our graphene Raman spectroscopy-based sensor (GRS) may extend its applications to a broader range of remote and non-invasive detection without the need to employ electronics such as field-effect transistors.</td>
+</tr>
+<tr id="rev_Ahmadianyazdi2022" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: Pyrene used as a linker for a raman based bio-sensor</td>
+</tr>
+<tr id="bib_Ahmadianyazdi2022" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Ahmadianyazdi2022,
+  author = {Alireza Ahmadianyazdi and Ngoc Hoang Lan Nguyen and Jie Xu and Vikas Berry},
+  title = {Glucose measurement via Raman spectroscopy of graphene: Principles and operation},
+  journal = {Nano Research},
+  publisher = {Springer Science and Business Media LLC},
+  year = {2022},
+  volume = {15},
+  number = {10},
+  pages = {8697--8704},
+  doi = {https://doi.org/10.1007/s12274-022-4587-9}
+}
+</pre></td>
+</tr>
+<tr id="Anchique2021" class="entry">
+	<td>Anchique, L., Alc&aacute;zar, J.J., Ramos-Hernandez, A., M&eacute;ndez-L&oacute;pez, M., Mora, J.R., Rangel, N., Paz, J.L. and M&aacute;rquez, E.</td>
+	<td>Predicting the Adsorption of Amoxicillin and Ibuprofen on Chitosan and Graphene Oxide Materials: A Density Functional Theory Study <p class="infolinks">[<a href="javascript:toggleInfo('Anchique2021','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Anchique2021','comment')">Comment</a>] [<a href="javascript:toggleInfo('Anchique2021','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>Polymers<br/>Vol. 13(10), pp. 1620&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.3390/polym13101620">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Anchique2021" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The occurrence, persistence, and accumulation of antibiotics and non-steroidal anti-inflammatory drugs (NSAIDs) represent a new environmental problem due to their harmful effects on human and aquatic life. A suitable absorbent for a particular type of pollutant does not necessarily absorb other types of compounds, so knowing the compatibility between a particular pollutant and a potential absorbent before experimentation seems to be fundamental. In this work, the molecular interactions between some pharmaceuticals (amoxicillin, ibuprofen, and tetracycline derivatives) with two potential absorbers, chitosan and graphene oxide models (pyrene, GO-1, and coronene, GO-2), were studied using the ωB97X-D/6-311G(2d,p) level of theory. The energetic interaction order found was amoxicillin/chitosan > amoxicillin/GO-1 > amoxicillin/GO-2 > ibuprofen/chitosan > ibuprofen/GO-2 > ibuprofen/GO-1, the negative sign for the interaction energy in all complex formations confirms good compatibility, while the size of Eint between 24–34 kcal/mol indicates physisorption processes. Moreover, the free energies of complex formation were negative, confirming the spontaneity of the processes. The larger interaction of amoxicillin Gos, compared to ibuprofen Gos, is consistent with previously reported experimental results, demonstrating the exceptional predictability of these methods. The second-order perturbation theory analysis shows that the amoxicillin complexes are mainly driven by hydrogen bonds, while van der Waals interactions with chitosan and hydrophobic interactions with graphene oxides are modelled for the ibuprofen complexes. Energy decomposition analysis (EDA) shows that electrostatic energy is a major contributor to the stabilization energy in all cases. The results obtained in this work promote the use of graphene oxides and chitosan as potential adsorbents for the removal of these emerging pollutants from water.</td>
+</tr>
+<tr id="rev_Anchique2021" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: pyrene as linker on graphene to detect ibuprofen</td>
+</tr>
+<tr id="bib_Anchique2021" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Anchique2021,
+  author = {Leonardo Anchique and Jackson J. Alc&aacute;zar and Andrea Ramos-Hernandez and Maximiliano M&eacute;ndez-L&oacute;pez and Jos&eacute; R. Mora and Norma Rangel and Jos&eacute; Luis Paz and Edgar M&aacute;rquez},
+  title = {Predicting the Adsorption of Amoxicillin and Ibuprofen on Chitosan and Graphene Oxide Materials: A Density Functional Theory Study},
+  journal = {Polymers},
+  publisher = {MDPI AG},
+  year = {2021},
+  volume = {13},
+  number = {10},
+  pages = {1620},
+  doi = {https://doi.org/10.3390/polym13101620}
+}
+</pre></td>
+</tr>
+<tr id="Costa2021" class="entry">
+	<td>Costa, J.C.S., Campos, R.M., Lima, L.M.S.S., da Silva, M.A.V.R. and Santos, L.M.N.B.F.</td>
+	<td>On the Aromatic Stabilization of Fused Polycyclic Aromatic Hydrocarbons <p class="infolinks">[<a href="javascript:toggleInfo('Costa2021','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Costa2021','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>The Journal of Physical Chemistry A<br/>Vol. 125(17), pp. 3696-3709&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acs.jpca.1c01978">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Costa2021" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The thermodynamic properties and band gap energies were evaluated for six ortho- and peri-fused polycyclic aromatic hydrocarbons (PAHs): triphenylene; benzo[a]pyrene; benzo[e]pyrene; perylene; benzo[ghi]perylene; coronene. The standard molar enthalpies of formation in the crystalline state and the standard molar enthalpies of sublimation were measured by high precision combustion calorimetry and Knudsen effusion methodology, respectively. The combination of the molar enthalpies of formation in the crystalline state with the respective enthalpies of sublimation was used to evaluate the energetics of the progressive peri-fusion of the aromatic moieties from triphenylene to coronene aiming to investigate the hypothetical superaromaticity character of coronene. The linear trend of the enthalpy of formation in crystalline and gaseous phases in the series (from benzo[e]pyrene to coronene) is an irrefutable indication of a non-superaromaticity character of coronene. High accurate thermodynamic properties of sublimation (volatility, enthalpy, and entropy of sublimation) were derived by the measurement of vapor pressures as a function of temperature, using a Knudsen/quartz crystal effusion methodology. Furthermore, the π-electronic conjugation of these compounds was explored by evaluation of the optical band gaps along with this series of compounds. The morphology of perylene, benzo[ghi]perylene, and coronene thin films, deposited by physical vapor deposition onto transparent conductive oxide substrates (ITO and FTO), was used to analyze the nucleation and growth mechanisms. The morphologies observed were found to be related to the cohesive energy and entropy of the bulk.</td>
+</tr>
+<tr id="bib_Costa2021" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Costa2021,
+  author = {Jos&eacute; C. S. Costa and Ricardo M. Campos and Lu\is M. S. S. Lima and M. A. V. Ribeiro da Silva and Lu\is M. N. B. F. Santos},
+  title = {On the Aromatic Stabilization of Fused Polycyclic Aromatic Hydrocarbons},
+  journal = {The Journal of Physical Chemistry A},
+  publisher = {American Chemical Society (ACS)},
+  year = {2021},
+  volume = {125},
+  number = {17},
+  pages = {3696--3709},
+  doi = {https://doi.org/10.1021/acs.jpca.1c01978}
+}
+</pre></td>
+</tr>
+<tr id="Krumland2021" class="entry">
+	<td>Krumland, J. and Cocchi, C.</td>
+	<td>Conditions for electronic hybridization between transition-metal dichalcogenide monolayers and physisorbed carbon-conjugated molecules <p class="infolinks">[<a href="javascript:toggleInfo('Krumland2021','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Krumland2021','comment')">Comment</a>] [<a href="javascript:toggleInfo('Krumland2021','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>Electronic Structure<br/>Vol. 3(4), pp. 044003&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1088/2516-1075/ac421f">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Krumland2021" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Hybridization effects play a crucial role in determining the electronic properties of hybrid inorganic/organic interfaces. To gain insight into these important interactions, we perform a first-principles study based on hybrid density-functional theory including spin–orbit coupling, focusing on eight representative systems formed by two carbon-conjugated molecules—pyrene and perylene—physisorbed on the transition-metal dichalcogenide monolayers (TMDCs) MoS2, MoSe2, WS2, and WSe2. By means of band unfolding techniques, we analyze the band structures of the considered materials, identifying the contributions of the individual constituents as well as the signatures of their hybridization. Based on symmetry and energetic arguments, we derive general conditions for electronic hybridization between conjugated molecules and underlying TMDCs even when the former do not lie planar on the latter, thus providing the key to predict how their mutual arrangement affect their electronic interactions.</td>
+</tr>
+<tr id="rev_Krumland2021" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: looked at the hybridization effects of pyrene physio-sorbed on TMDCs (MoS2, MoSe2, WS2 and WSe2) using hybrid DFT. calculated the simulation results by band unfolding techniques and analyzed the dand structures. identified the individual contributions and signatures of each constituent. <br><br>** "Based on symmetry and energetic arguments, we derive general conditions for electronic hybridization between conjugated molecules and underlying TMDCs even when the former do not lie planar on the latter, thus providing the key to predict how their mutual arrangement affect their electronic interactions"</td>
+</tr>
+<tr id="bib_Krumland2021" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Krumland2021,
+  author = {Jannis Krumland and Caterina Cocchi},
+  title = {Conditions for electronic hybridization between transition-metal dichalcogenide monolayers and physisorbed carbon-conjugated molecules},
+  journal = {Electronic Structure},
+  publisher = {IOP Publishing},
+  year = {2021},
+  volume = {3},
+  number = {4},
+  pages = {044003},
+  doi = {https://doi.org/10.1088/2516-1075/ac421f}
+}
+</pre></td>
+</tr>
+<tr id="Lazare2020" class="entry">
+	<td>Lazare, J., Daggag, D. and Dinadayalane, T.</td>
+	<td>DFT study on binding of single and double methane with aromatic hydrocarbons and graphene: stabilizing CH&hellip;HC interactions between two methane molecules <p class="infolinks">[<a href="javascript:toggleInfo('Lazare2020','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Lazare2020','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>Structural Chemistry<br/>Vol. 32(2), pp. 591-605&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1007/s11224-020-01657-y">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Lazare2020" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Density functional theory (DFT) calculations were used to examine the binding strength of one and two methane molecule(s) with graphene (62 and 186 carbon atoms) and model systems of aromatic hydrocarbons (benzene, pyrene, and coronene). We explored different possibilities of binding modes of methane such as one, two, and three C-H interacting with small π-systems. Two methane molecules were considered to bind from the same as well as opposite sides of the plane of benzene and other π-systems including graphene models. Our results show that methane molecule prefers to bind with three C-H…π interactions with all the π-systems except benzene. The preference of tripod configuration of methane on the surface of graphene systems strongly agrees with the neutron diffraction experiment of methane on graphitized carbon black. The binding strength is almost doubled by increasing the number of methane molecules from one to two. Importantly, two methane molecules prefer to bind on the same side rather than opposite sides of the plane of graphene due to stabilizing CH…HC interactions between them in addition to six C-H…π interactions. Interestingly, binding strength contributions from CH…HC interactions (approx. 0.4–0.5 kcal/mol) of two methane molecules on the surface are analogous to methane dimer complex free from the surface of graphene. C-H stretching frequency shifts, bond lengths, and binding distances support the presence of CH…HC interactions between two methane molecules. Structures of complexes, binding energies, and C-H stretching frequency shifts agree with available experimental data.</td>
+</tr>
+<tr id="bib_Lazare2020" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Lazare2020,
+  author = {Jovian Lazare and Dalia Daggag and Tandabany Dinadayalane},
+  title = {DFT study on binding of single and double methane with aromatic hydrocarbons and graphene: stabilizing CH&hellip;HC interactions between two methane molecules},
+  journal = {Structural Chemistry},
+  publisher = {Springer Science and Business Media LLC},
+  year = {2020},
+  volume = {32},
+  number = {2},
+  pages = {591--605},
+  doi = {https://doi.org/10.1007/s11224-020-01657-y}
+}
+</pre></td>
+</tr>
+<tr id="Oishi2022" class="entry">
+	<td>Oishi, Y., Ogi, H., Hagiwara, S., Otani, M. and Kusakabe, K.</td>
+	<td>Theoretical Analysis on the Stability of 1-Pyrenebutanoic Acid Succinimidyl Ester Adsorbed on Graphene <p class="infolinks">[<a href="javascript:toggleInfo('Oishi2022','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Oishi2022','comment')">Comment</a>] [<a href="javascript:toggleInfo('Oishi2022','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>ACS Omega<br/>Vol. 7(35), pp. 31120-31125&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acsomega.2c03257">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Oishi2022" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The adsorbed structure of 1-pyrenebutanoic acid succinimidyl ester (PASE) on graphene was investigated based on density functional theory. We found two locally stable structures: a straight structure with the chainlike part of butanoic acid succinimidyl ester (BSE) lying down and a bent structure with the BSE part directed away from graphene, keeping the pyrene (Py) part adsorbed on graphene. Then, to elucidate the adsorption mechanism, we separately estimated the contributions of the Py and BSE parts to the entire PASE adsorption, and the adsorption effect of the BSE part was found to be secondary in comparison to the contribution of the Py. Next, the mobility of the BSE part at room temperature was confirmed by the activation energy barrier between straight and bent structures. To take account of the external environment, we considered the presence of amino acids and the hydration effect by a three-dimensional reference interaction site model. The contributions of glycine molecules and the solvent environment to stabilizing the bent PASE structure relative to the straight PASE structure were found. Therefore, the effect of the external environment around PASE is of importance when the standing-up process of the BSE part from graphene is considered.</td>
+</tr>
+<tr id="rev_Oishi2022" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: DFT of pyrene and a pyrene derivative with potential applications of a biosensor on the surface of graphene</td>
+</tr>
+<tr id="bib_Oishi2022" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Oishi2022,
+  author = {Yasuhiro Oishi and Hirotsugu Ogi and Satoshi Hagiwara and Minoru Otani and Koichi Kusakabe},
+  title = {Theoretical Analysis on the Stability of 1-Pyrenebutanoic Acid Succinimidyl Ester Adsorbed on Graphene},
+  journal = {ACS Omega},
+  publisher = {American Chemical Society (ACS)},
+  year = {2022},
+  volume = {7},
+  number = {35},
+  pages = {31120--31125},
+  doi = {https://doi.org/10.1021/acsomega.2c03257}
+}
+</pre></td>
+</tr>
+<tr id="Salomon2021" class="entry">
+	<td>Salomon, E., Minissale, M., Lairado, F.R., Coussan, S., Rousselot-Pailley, P., Dulieu, F. and Angot, T.</td>
+	<td>Pyrene Adsorption on a Ag(111) Surface <p class="infolinks">[<a href="javascript:toggleInfo('Salomon2021','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Salomon2021','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>The Journal of Physical Chemistry C<br/>Vol. 125(20), pp. 11166-11174&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acs.jpcc.1c01350">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Salomon2021" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: This work describes the adsorption of pyrene molecules on a Ag(111) surface. We first demonstrate that despite its high vapor pressure, pyrene molecules can form ordered films under ultrahigh vacuum conditions, presenting a well-contrasted diffraction pattern. Studies using high-resolution electron energy loss spectroscopy and ultraviolet photoelectron spectroscopy provide compelling evidence of a physisorbed system where the molecules only weakly interact with the substrate underneath. Comparisons with theoretical calculations, as well as with data obtained from optical spectroscopies, clearly demonstrate that the vibrational and electronic properties of the adsorbed molecules are similar to the expected ones for pristine pyrene. Finally, we used temperature-programmed X-rays photoelectron spectroscopy to study the desorption process of pyrene on the Ag(111) surface and estimate its activation energy to desorption.</td>
+</tr>
+<tr id="bib_Salomon2021" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Salomon2021,
+  author = {Eric Salomon and Marco Minissale and Francisco Romero Lairado and Stephane Coussan and Pierre Rousselot-Pailley and Fran&ccedil;ois Dulieu and Thierry Angot},
+  title = {Pyrene Adsorption on a Ag(111) Surface},
+  journal = {The Journal of Physical Chemistry C},
+  publisher = {American Chemical Society (ACS)},
+  year = {2021},
+  volume = {125},
+  number = {20},
+  pages = {11166--11174},
+  doi = {https://doi.org/10.1021/acs.jpcc.1c01350}
+}
+</pre></td>
+</tr>
+<tr id="Sengul2022" class="entry">
+	<td>Sengul, O., Völkle, J., Valli, A. and Stadler, R.</td>
+	<td>Enhancing the sensitivity and selectivity of pyrene-based sensors for detection of small gaseous molecules via destructive quantum interference <p class="infolinks">[<a href="javascript:toggleInfo('Sengul2022','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Sengul2022','comment')">Comment</a>] [<a href="javascript:toggleInfo('Sengul2022','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Physical Review B<br/>Vol. 105(16), pp. 165428&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1103/physrevb.105.165428">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Sengul2022" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Graphene-based sensors are exceptionally sensitive with high carrier mobility and low intrinsic noise, and have been intensively investigated in the past decade. The detection of individual gas molecules has been reported, albeit the underlying sensing mechanism is not yet well understood. We focus on the adsorption of <br>NO2, H2O, and NH3 on a molecular junction with a pyrene core, which can be considered as a minimal graphenelike unit. We systematically investigate the chemiresistive response within the framework of density functional theory and nonequilibrium Greens functions. We highlight the fundamental role of quantum interference (QI) in the sensing process, and we propose it as a paradigmatic mechanism for sensing. Owing to the open-shell character of NO2, its interaction with pyrene gives rise to a Fano resonance thereby triggering the strongest chemiresistive response, while the weaker interactions with H2O and NH3 result in lower sensitivity. We demonstrate that by exploiting destructive QI arising in the meta-substituted pyrene, it is possible to calibrate the sensor to enhance both its sensitivity and chemical selectivity by almost two orders of magnitude so that individual molecules can be detected and distinguished. These results provide a fundamental strategy to design high-performance chemical sensors with graphene functional blocks.</td>
+</tr>
+<tr id="rev_Sengul2022" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: Ignatova really likes paper, i sent it to her on 10/20/22<br><br>simulated a graphene-like sensor using pyrene as a minimal graphenelike unit. investigated the chemiresistive responce using DFT and nonequilibrium greensfuncions. highlight role of quantum interference and propose it as a paradigmatic mechanism for sensing. the results point to a high-performance chemical sensor with graphene functional blocks. <br><br>analyte: NO2 , H2O and NH3<br><br>underlying sensing mechanism of individual gas molecules is not well understood to this date.</td>
+</tr>
+<tr id="bib_Sengul2022" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Sengul2022,
+  author = {Ozlem Sengul and Julia Völkle and Angelo Valli and Robert Stadler},
+  title = {Enhancing the sensitivity and selectivity of pyrene-based sensors for detection of small gaseous molecules via destructive quantum interference},
+  journal = {Physical Review B},
+  publisher = {American Physical Society (APS)},
+  year = {2022},
+  volume = {105},
+  number = {16},
+  pages = {165428},
+  doi = {https://doi.org/10.1103/physrevb.105.165428}
+}
+</pre></td>
+</tr>
+<tr id="Yi2022" class="entry">
+	<td>Yi, P., Zuo, X., Liang, N., Wu, M., Chen, Q., Zhang, L. and Pan, B.</td>
+	<td>Molecular clusters played an important role in the adsorption of polycyclic aromatic hydrocarbons (PAHs) on carbonaceous materials <p class="infolinks">[<a href="javascript:toggleInfo('Yi2022','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Yi2022','comment')">Comment</a>] [<a href="javascript:toggleInfo('Yi2022','bibtex')">BibTeX</a>]</p></td>
+	<td>2022</td>
+	<td>Chemosphere<br/>Vol. 302, pp. 134772&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.chemosphere.2022.134772">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Yi2022" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Polycyclic aromatic hydrocarbons (PAHs) are one of the most frequently detected hydrophobic organic contaminants (HOCs) in the environment. They may form clusters because of the strong hydrophobic and π-π electron-donor-acceptor (EDA) interactions among PAHs molecules. However, previous experimental studies and theoretical simulations generally ignored the impact of molecular clusters on the adsorption, which may result in the misunderstanding of the environmental fate and risk. In this work, naphthalene (NAP), phenanthrene (PHE), and pyrene (PYR) were selected to investigate intermolecular interaction as well as the consequent impact on their adsorption on graphene. The density field of C atoms in equilibrium configurations of self-interacted PAHs suggested that the formation of PAHs molecular clusters was a spontaneous process, and was favored in solvents with stronger polarity and for PAHs with more benzene rings. It should be noted that the molecular dynamics simulations with the initial state of molecular clusters matched better with the published experimental results compared with those of individual PAHs. The formed compact PAHs clusters in polar solvents increased the apparent PAHs adsorption, because of their higher hydrophobic and π-π EDA interactions. This study emphasized that the self-interaction of PAHs should be carefully considered in both experimental and theoretical simulation studies.</td>
+</tr>
+<tr id="rev_Yi2022" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: Polycyclic aromatic hydrocarbons (PAHs) ( PYRENE , naphthalene phenanthrene ) are strongly hydrophobic and pi-pi electron-donor-acceptor (EDA) interactions with other PAHs and like to cluster. This paper focuses on clusters of PAHs on the surface of graphene. clustering is favorable in strong polar solvants. performed MD and compared with experimental showed better results with simulations clustering. polar solvents increased the absorbtion due to the pi-pi eda interactions and higher hydrophobicity.</td>
+</tr>
+<tr id="bib_Yi2022" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Yi2022,
+  author = {Peng Yi and Xiangzhi Zuo and Ni Liang and Min Wu and Quan Chen and Lijuan Zhang and Bo Pan},
+  title = {Molecular clusters played an important role in the adsorption of polycyclic aromatic hydrocarbons (PAHs) on carbonaceous materials},
+  journal = {Chemosphere},
+  publisher = {Elsevier BV},
+  year = {2022},
+  volume = {302},
+  pages = {134772},
+  doi = {https://doi.org/10.1016/j.chemosphere.2022.134772}
+}
+</pre></td>
+</tr>
+<tr id="Araujo2017" class="entry">
+	<td>Araujo, V., Cubill&aacute;n, N., Lindo-O&ntilde;ate, O. and Castellano, O.</td>
+	<td>Molecular characterization of the adsorptive properties of extended graphene towards polyaromatic compounds of environmental interest: chrysene, benzo[a]anthracene, benzo[a]pyrene and benzo[b]fluoranthene <p class="infolinks">[<a href="javascript:toggleInfo('Araujo2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Araujo2017','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Journal of Computational Methods in Sciences and Engineering<br/>Vol. 17(1), pp. 29-37&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.3233/jcm-160658">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Araujo2017" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The geometry, electronic properties and energy of the complexes formed between an extended graphene and polycyclic aromatic hydrocarbons,PAHs, were investigated at the Density Functional Theory (DFT) level. We have studied the interaction of benzo[a]pyrene, chrysene, benzo[a]anthracene and benzo[b]fluoranthene with graphene models of dimensions of 15 Å, × 15 Å and 20 Å × 20 Å. These calculations were performed within the generalized gradient approximation GGA using the HCTH functional and the numerical DNP basis set. According to the results, the HCTH/DNP methodology can qualitatively describe attractive interactions occurring between the weakly-polar systems, verifying the formation of molecular complexes stabilized by Keesom or Debye forces. The interaction dipole moments and polarizabilities indicate that the interaction of permanent dipoles and induced dipoles are responsible for the complex formation in weakly polar PAHs. These results are useful to understand the processes of adsorption of PAHs by graphene.</td>
+</tr>
+<tr id="bib_Araujo2017" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Araujo2017,
+  author = {Vianeis Araujo and Nestor Cubill&aacute;n and Oscar Lindo-O&ntilde;ate and Olga Castellano},
+  title = {Molecular characterization of the adsorptive properties of extended graphene towards polyaromatic compounds of environmental interest: chrysene, benzo[a]anthracene, benzo[a]pyrene and benzo[b]fluoranthene},
+  journal = {Journal of Computational Methods in Sciences and Engineering},
+  publisher = {IOS Press},
+  year = {2017},
+  volume = {17},
+  number = {1},
+  pages = {29--37},
+  doi = {https://doi.org/10.3233/jcm-160658}
+}
+</pre></td>
+</tr>
+<tr id="Bichenkova2017" class="entry">
+	<td>Bichenkova, E.V., Raju, A.P.A., Burusco, K.K., Kinloch, I.A., Novoselov, K.S. and Clarke, D.J.</td>
+	<td>NMR detects molecular interactions of graphene with aromatic and aliphatic hydrocarbons in water <p class="infolinks">[<a href="javascript:toggleInfo('Bichenkova2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Bichenkova2017','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>2D Materials<br/>Vol. 5(1), pp. 015003&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1088/2053-1583/aa8abe">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Bichenkova2017" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Polyaromatic carbon is widely held to be strongly diamagnetic and hydrophobic, with textbook van der Waals and 'π-stacked' binding of hydrocarbons, which disrupt their self-assembled supramolecular structures. The NMR of organic molecules sequestered by polyaromatic carbon is expected to be dominated by shielding from the orbital diamagnetism of π electrons. We report the first evidence of very different polar and magnetic behavior in water, wherein graphene remained well-dispersed after extensive dialysis and behaved as a 1H-NMR-silent ghost. Magnetic effects dominated the NMR of organic structures which interacted with graphene, with changes in spin–spin coupling, vast increase in relaxation, line broadening and decrease in NMR peak heights when bound to graphene. However, the interactions were weak, reversible and did not disrupt organic self-assemblies reliant on hydrophobic 'π-stacking', even when substantially sequestered on the surface of graphene by the high surface area available. Interacting assemblies of aromatic molecules retained their strongly-shielded NMR signals and remained within self-assembled structures, with slower rates of diffusion from association with graphene, but with no further shielding from graphene. Binding to graphene was selective for positively-charged organic assemblies, weaker for non-aromatic and negligible for strongly-negatively-charged molecules, presumably repelled by a negative zeta potential of graphene in water. Stronger binders, or considerable excess of weaker binders readily reversed physisorption, with no evidence of structural changes from chemisorption. The fundamental nature of these different electronic interactions between organic and polyaromatic carbon is considered with relevance to electronics, charge storage, sensor, medical, pharmaceutical and environmental research.</td>
+</tr>
+<tr id="bib_Bichenkova2017" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Bichenkova2017,
+  author = {Elena V Bichenkova and Arun P A Raju and Kepa K Burusco and Ian A Kinloch and Kostya S Novoselov and David J Clarke},
+  title = {NMR detects molecular interactions of graphene with aromatic and aliphatic hydrocarbons in water},
+  journal = {2D Materials},
+  publisher = {IOP Publishing},
+  year = {2017},
+  volume = {5},
+  number = {1},
+  pages = {015003},
+  doi = {https://doi.org/10.1088/2053-1583/aa8abe}
+}
+</pre></td>
+</tr>
+<tr id="Bolognesi2019" class="entry">
+	<td>Bolognesi, M., Moschetto, S., Trapani, M., Prescimone, F., Ferroni, C., Manca, G., Ienco, A., Borsacchi, S., Caporali, M., Muccini, M., Peruzzini, M., Serrano-Ruiz, M., Calucci, L., Castriciano, M.A. and Toffanin, S.</td>
+	<td>Noncovalent Functionalization of 2D Black Phosphorus with Fluorescent Boronic Derivatives of Pyrene for Probing and Modulating the Interaction with Molecular Oxygen <p class="infolinks">[<a href="javascript:toggleInfo('Bolognesi2019','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Bolognesi2019','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>ACS Applied Materials &amp;ampmathsemicolon Interfaces<br/>Vol. 11(25), pp. 22637-22647&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acsami.9b04344">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Bolognesi2019" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We studied the chemical–physical nature of interactions involved in the formation of adducts of two-dimensional black phosphorus (2D BP) with organoboron derivatives of a conjugated fluorescent molecule (pyrene). Time-resolved fluorescence spectroscopy showed a stabilization effect of 2D BP on all derivatives, in particular for the adducts endowed with the boronic functionalities. Also, a stronger modulation of the fluorescence decay with oxygen was registered for one of the adducts compared to the corresponding organoboron derivative alone. Nuclear magnetic resonance experiments in suspension and density functional theory simulations confirmed that only noncovalent interactions were involved in the formation of the adducts. The energetic gain in their formation arises from the interaction of P atoms with both C atoms of the pyrene core and the B atom of the boronic functionalities, with a stronger contribution from the ester with respect to the acid one. The interaction results in the lowering of the band gap of 2D BP by around 0.10 eV. Furthermore, we demonstrated through Raman spectroscopy an increased stability toward oxidation in air of 2D BP in the adducts in the solid state (more than 6 months). The modification of the electronic structure at the interface between 2D BP and a conjugated organic molecule through noncovalent stabilizing interactions mediated by the B atom is particularly appealing in view of creating heterojunctions for optoelectronic, photonic, and chemical sensing applications.</td>
+</tr>
+<tr id="bib_Bolognesi2019" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Bolognesi2019,
+  author = {Margherita Bolognesi and Salvatore Moschetto and Mariachiara Trapani and Federico Prescimone and Claudia Ferroni and Gabriele Manca and Andrea Ienco and Silvia Borsacchi and Maria Caporali and Michele Muccini and Maurizio Peruzzini and Manuel Serrano-Ruiz and Lucia Calucci and Maria Angela Castriciano and Stefano Toffanin},
+  title = {Noncovalent Functionalization of 2D Black Phosphorus with Fluorescent Boronic Derivatives of Pyrene for Probing and Modulating the Interaction with Molecular Oxygen},
+  journal = {ACS Applied Materials &amp;ampmathsemicolon Interfaces},
+  publisher = {American Chemical Society (ACS)},
+  year = {2019},
+  volume = {11},
+  number = {25},
+  pages = {22637--22647},
+  doi = {https://doi.org/10.1021/acsami.9b04344}
+}
+</pre></td>
+</tr>
+<tr id="Cai2016" class="entry">
+	<td>Cai, X., Wang, J., Chi, R., Song, Y., Li, J., Sun, Q. and Jia, Y.</td>
+	<td>Direct Exfoliation of Graphite into Graphene by Pyrene-Based Molecules as Molecular-Level Wedges: A Tribological View <p class="infolinks">[<a href="javascript:toggleInfo('Cai2016','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Cai2016','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>Tribology Letters<br/>Vol. 62(2)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1007/s11249-016-0678-7">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Cai2016" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The van der Waals corrected first-principles approach within density functional theory is performed to investigate the mechanism of direct exfoliation of graphite into graphene by pyrene-based molecules. Our results show that the interaction energies between pyrene-based molecules and graphene are larger than the interlayer inaction energy of bilayer graphene. However, the frictions of pyrene-based molecules on graphene are lower than the interlayer friction of bilayer graphene. The comparisons of adsorption energies and frictions for different molecules on graphene indicate that the size of friction can be affected by the length and type of the additional chain of pyrene-based molecule. These studies illustrate that the PCA can bond to graphene from adsorption energy view, and can slide on the graphene easily, which explains the experiment very well and provides a few of alternative molecules to produce the aqueous dispersions of graphene flakes according to different demands.</td>
+</tr>
+<tr id="bib_Cai2016" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Cai2016,
+  author = {Xiaolin Cai and Jianjun Wang and Runze Chi and Youlin Song and Jinming Li and Qiang Sun and Yu Jia},
+  title = {Direct Exfoliation of Graphite into Graphene by Pyrene-Based Molecules as Molecular-Level Wedges: A Tribological View},
+  journal = {Tribology Letters},
+  publisher = {Springer Science and Business Media LLC},
+  year = {2016},
+  volume = {62},
+  number = {2},
+  doi = {https://doi.org/10.1007/s11249-016-0678-7}
+}
+</pre></td>
+</tr>
+<tr id="Huang2014" class="entry">
+	<td>Huang, C., Kim, M., Wong, B.M., Safron, N.S., Arnold, M.S. and Gopalan, P.</td>
+	<td>Raman Enhancement of a Dipolar Molecule on Graphene <p class="infolinks">[<a href="javascript:toggleInfo('Huang2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Huang2014','bibtex')">BibTeX</a>]</p></td>
+	<td>2014</td>
+	<td>The Journal of Physical Chemistry C<br/>Vol. 118(4), pp. 2077-2084&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/jp410749a">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Huang2014" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We show a large enhancement in the Raman signal from a highly polarizable molecule attached to single layer graphene. Through spatial mapping of the Raman signal and wavelength-dependent Raman measurements from a dipolar chromophore latched to a graphene/SiO2 substrate and to a bare SiO2 substrate, we show that strong electronic coupling in the hybrid structure contributes to the enhancement. The dipolar molecule is a pyrene tethered Disperse Red 1 (DR1P) that noncovalently binds to graphene. Upon comparison of the Raman signal of DR1P on single layer graphene with that on a bare SiO2/Si substrate, we found that the enhancement factor is in the range 29–69 at 532 nm excitation. As the surface coverage of DR1P on graphene increases, Raman intensity also increases and saturates at a certain concentration. The saturation of the Raman signal intensity at higher DR1P concentrations were accompanied by shifts in the G band and the 2D band of graphene due to p-doping. We further show that the Raman enhancement that occurs on single layer is larger than on few layer graphene. Quantitative analysis on the Raman scattering cross section of DR1P on graphene shows a higher Raman scattering cross section compared to that in solution confirming a strong electronic coupling. A series of all-electron ab initio calculations using density functional theory (DFT) modeled the noncovalent binding of DR1P on a large graphene fragment where the pyrene tether is interacting with the graphene fragment via π–π stacking interactions. The DR1P molecule has occupied energy levels that are close to the Fermi level of graphene, and these interact strongly with the semimetallic nature of graphene. As a consequence, in complete contrast to the isolated DR1P molecule, our time-dependent DFT calculations show that the orbital energies and densities for DR1P are significantly modified by the graphene substrate.</td>
+</tr>
+<tr id="bib_Huang2014" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Huang2014,
+  author = {Changshui Huang and Myungwoong Kim and Bryan M. Wong and Nathaniel S. Safron and Michael S. Arnold and Padma Gopalan},
+  title = {Raman Enhancement of a Dipolar Molecule on Graphene},
+  journal = {The Journal of Physical Chemistry C},
+  publisher = {American Chemical Society (ACS)},
+  year = {2014},
+  volume = {118},
+  number = {4},
+  pages = {2077--2084},
+  doi = {https://doi.org/10.1021/jp410749a}
+}
+</pre></td>
+</tr>
+<tr id="Kuamit2017" class="entry">
+	<td>Kuamit, T., Ratanasak, M., Rungnim, C. and Parasuk, V.</td>
+	<td>Effects of shape, size, and pyrene doping on electronic properties of graphene nanoflakes <p class="infolinks">[<a href="javascript:toggleInfo('Kuamit2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Kuamit2017','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Journal of Molecular Modeling<br/>Vol. 23(12)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1007/s00894-017-3521-7">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Kuamit2017" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Effects of size, shape, and pyrene doping on electronic properties of graphene nanoflakes (GNFs) were theoretically investigated using density functional theory method with PBE, B3PW91, and M06-2X functionals and cc-pVDZ basis set. Two shapes of zigzag GNFs, hexagonal (HGN) and rhomboidal (RGN), were considered. The energy band gap of GNF depends on shape and decreases with size. The HGN has larger band gap energy (1.23–3.96 eV) than the RGN (0.13–2.12 eV). The doping of pyrene and pyrene derivatives on both HGN and RGN was also studied. The adsorption energy of pyrene and pyrene derivatives on GNF does not depend on the shape of GNFs with energies between 21 and 27 kcal mol−1. The substituent on pyrene enhances the binding to GNF but the strength does not depend on electron withdrawing or donating capability. The doping by pyrene and pyrene derivatives also shifts the HOMO and LUMO energies of GNFs. Both positive (destabilizing) and negative (stabilizing) shifts on HOMO and LUMO of GNFs were seen. The direction and magnitude of the shift do not follow the electron withdrawing and donating capability of pyrene substituents. However, only a slight shift was observed for doped RGN. A shift of 0.19 eV was noticed for HOMO of HGN doped with 1-aminopyrene (pyNH2) and of 0.04 eV for LUMO of HGN doped with 1-pyrenecarboxylic acid (pyCOOH).</td>
+</tr>
+<tr id="bib_Kuamit2017" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Kuamit2017,
+  author = {Thanawit Kuamit and Manussada Ratanasak and Chompoonut Rungnim and Vudhichai Parasuk},
+  title = {Effects of shape, size, and pyrene doping on electronic properties of graphene nanoflakes},
+  journal = {Journal of Molecular Modeling},
+  publisher = {Springer Science and Business Media LLC},
+  year = {2017},
+  volume = {23},
+  number = {12},
+  doi = {https://doi.org/10.1007/s00894-017-3521-7}
+}
+</pre></td>
+</tr>
+<tr id="Lechner2014" class="entry">
+	<td>Lechner, C. and Sax, A.F.</td>
+	<td>Adhesive Forces Between Aromatic Molecules and Graphene <p class="infolinks">[<a href="javascript:toggleInfo('Lechner2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Lechner2014','bibtex')">BibTeX</a>]</p></td>
+	<td>2014</td>
+	<td>The Journal of Physical Chemistry C<br/>Vol. 118(36), pp. 20970-20981&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/jp505894p">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Lechner2014" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Adhesive forces were investigated in a computational study for the complexes of graphene with each of the four adsorbates, benzene, anthracene, pyrene, and tetracene, by using the DFT method B3LYP and the semiempirical method DFTB, together with empirical dispersion corrections. The four aromatic molecules differ in size and flexibility. Whereas the adhesion energy (for complete separation) is independent of the way an adsorbed molecule is separated from graphene, the maximum adhesive forces depend strongly on the way the adsorbate is lifted. We investigated, therefore, four lifting modes: in rigid vertical lifting, all atoms of the adsorbate are pull-off points; in flexible central lifting, the pull-off points are in the middle of the adsorbate; in both rigid and flexible terminal lifting, the pull-off points are at one end and the adsorbate is regarded as being either rigid or flexible. For the systems investigated, we find that, for both the adhesion energies and the maximum adhesive forces, the DFTB results are at most 10% lower than the corresponding DFT results. For small or rigid molecules like benzene and pyrene, there is no significant difference between rigid vertical and flexible central lifting. For a flexible molecule like tetracene, the difference of the maximum adhesive force can be up to 70%. Terminal lifting consists of two subprocesses. For the second subprocess, both the adhesion energy and the maximum adhesive force are essentially unchanged across all four adsorbates; for the first subprocess, however, we find a pronounced size dependence of the adhesion energy.</td>
+</tr>
+<tr id="bib_Lechner2014" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Lechner2014,
+  author = {Christoph Lechner and Alexander F. Sax},
+  title = {Adhesive Forces Between Aromatic Molecules and Graphene},
+  journal = {The Journal of Physical Chemistry C},
+  publisher = {American Chemical Society (ACS)},
+  year = {2014},
+  volume = {118},
+  number = {36},
+  pages = {20970--20981},
+  doi = {https://doi.org/10.1021/jp505894p}
+}
+</pre></td>
+</tr>
+<tr id="Lechner2017" class="entry">
+	<td>Lechner, C. and Sax, A.F.</td>
+	<td>Towards atomic-level mechanics: Adhesive forces between aromatic molecules and carbon nanotubes <p class="infolinks">[<a href="javascript:toggleInfo('Lechner2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Lechner2017','comment')">Comment</a>] [<a href="javascript:toggleInfo('Lechner2017','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Applied Surface Science<br/>Vol. 420, pp. 606-617&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.apsusc.2017.05.170">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Lechner2017" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The adhesive forces for desorption of the four aromatic compounds benzene, anthracene, pyrene, and tetracene from a (8,0) carbon nanotube (CNT) are investigated and compared to the desorption from graphene. The desorption energies are found to be proportional to the size of the contact zone in the adsorbent/adsorbate complex while maximum adhesive forces are proportional to the part of the contact zone where attractive interactions are reduced when external forces pull on the adsorbate. To assess the influence of the curvature, type of CNT, and the adsorbate's orientation, the desorption processes from six zigzag CNT and four armchair CNT are studied for pyrene and tetracene. For some properties, the results are independent of the curvature of the adsorbent, whereas for others we find marked differences. Aspects of elasticity are considered as well as the influence of the Pauli exclusion principle on the equilibrium geometries in adsorbent/adsorbate complexes.</td>
+</tr>
+<tr id="rev_Lechner2017" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: Adhesive forces at the interfaces are dominated by dispersion interaction. curvature of the CNT increases the curvature of the pyrene and increases the attractive dispersion interaction and decreases the distance between the CNT-pyrene.</td>
+</tr>
+<tr id="bib_Lechner2017" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Lechner2017,
+  author = {Christoph Lechner and Alexander F. Sax},
+  title = {Towards atomic-level mechanics: Adhesive forces between aromatic molecules and carbon nanotubes},
+  journal = {Applied Surface Science},
+  publisher = {Elsevier BV},
+  year = {2017},
+  volume = {420},
+  pages = {606--617},
+  doi = {https://doi.org/10.1016/j.apsusc.2017.05.170}
+}
+</pre></td>
+</tr>
+<tr id="Li2013" class="entry">
+	<td>Li, J., Liu, Y., Qian, Y., Li, L., Xie, L., Shang, J., Yu, T., Yi, M. and Huang, W.</td>
+	<td>Describing curved&ndash;planar uppi&ndash;uppi interactions: modeled by corannulene, pyrene and coronene <p class="infolinks">[<a href="javascript:toggleInfo('Li2013','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Li2013','bibtex')">BibTeX</a>]</p></td>
+	<td>2013</td>
+	<td>Physical Chemistry Chemical Physics<br/>Vol. 15(30), pp. 12694&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1039/c3cp51095f">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Li2013" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The specific π–π interactions between curved and planar structures, which are different from the general π–π interactions between planar arenes, have generated great attention due to their brand-new, unique, and fascinating photoelectric properties. Herein, the curved–planar (C–P) π–π interactions between corannulene, pyrene and coronene have been investigated using the DFT-D method. A series of structural and physical properties have been calculated including geometry, C–C distance, binding energy, population charge distribution, dipole moment, electrostatic potential (ESP), visualization of the interactions in real space, transfer integral, electronic transition behaviour and Raman shift. All the analyses indicate that the bowl–planar (CB–P) complexes are distinguishable from the mouth-tip–planar (CM–P) and planar–planar (P–P) packing motifs due to their coherent negative ESP, electronic attraction strength and Raman spectra. The C–P complexes are found to exhibit dominant electron transport characteristics. In addition, an unusual “negative Stokes shift” is found in the C–P π–π complexes, which is caused by state resonance. This provides a clue to help predict and explore the photoelectric properties of C–P π–π complexes. In particular, at the frequency of the out-of-plane CH bending vibration around 1400 cm−1, the planar molecules in the CB–P complexes possess a smaller Raman peak shift than in the CM–P complexes, and vice versa for the curved molecules. This specific Raman shift can be utilized as characteristic signals to identify the C–P structures.</td>
+</tr>
+<tr id="bib_Li2013" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Li2013,
+  author = {Jiewei Li and Yuyu Liu and Yan Qian and Lu Li and Linghai Xie and Jingzhi Shang and Ting Yu and Mingdong Yi and Wei Huang},
+  title = {Describing curved&ndash;planar uppi&ndash;uppi interactions: modeled by corannulene, pyrene and coronene},
+  journal = {Physical Chemistry Chemical Physics},
+  publisher = {Royal Society of Chemistry (RSC)},
+  year = {2013},
+  volume = {15},
+  number = {30},
+  pages = {12694},
+  doi = {https://doi.org/10.1039/c3cp51095f}
+}
+</pre></td>
+</tr>
+<tr id="Li2018" class="entry">
+	<td>Li, H., Wang, C., Xun, S., He, J., Jiang, W., Zhang, M., Zhu, W. and Li, H.</td>
+	<td>An accurate empirical method to predict the adsorption strength for uppi-orbital contained molecules on two dimensional materials <p class="infolinks">[<a href="javascript:toggleInfo('Li2018','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Li2018','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Journal of Molecular Graphics and Modelling<br/>Vol. 82, pp. 93-100&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.jmgm.2018.04.007">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Li2018" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: To obtain the adsorption strength is the key point for materials design and parameters optimization in chemical engineering. Here we report a simple but accuracy method to estimate the adsorptive energies by counting the number of π-orbital involved atoms based on theoretical computations for hexagonal boron nitride (h-BN) and graphene. Computational results by density function theory (DFT) as well as spin-component scaled second-order Møller-Plesset perturbation theory (SCS-MP2) both confirm that the adsorptive energies correlate well with the number of π-orbital involved atoms for π-orbital contained molecules. The selected molecules (adsorbates) are commonly used in chemical industry, which contains C, N, S, O atoms. The predicted results for the proposed formulas agree well with the current and previous DFT calculated values both on h-BN and graphene surfaces. Further, it can be also used to predict the adsorptive energies for small π-orbital contained molecules on BN and carbon nanotubes. The interaction type for these adsorptions is typical π-π interaction. Further investigations show that the physical origin of these interactions source from the polar interactions between the adsorbents and adsorbates. Hence, for separation or removal of aromatic molecules, how to modify the aromaticity and polarity of both adsorbents and adsorbates will be the key points for experiments.</td>
+</tr>
+<tr id="bib_Li2018" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Li2018,
+  author = {Hongping Li and Changwei Wang and Suhang Xun and Jing He and Wei Jiang and Ming Zhang and Wenshuai Zhu and Huaming Li},
+  title = {An accurate empirical method to predict the adsorption strength for uppi-orbital contained molecules on two dimensional materials},
+  journal = {Journal of Molecular Graphics and Modelling},
+  publisher = {Elsevier BV},
+  year = {2018},
+  volume = {82},
+  pages = {93--100},
+  doi = {https://doi.org/10.1016/j.jmgm.2018.04.007}
+}
+</pre></td>
+</tr>
+<tr id="Pratik2017" class="entry">
+	<td>Pratik, S.M., Nijamudheen, A. and Datta, A.</td>
+	<td>Design of van der Waals Two-Dimensional Heterostructures from Facially Polarized Janus All-lessigreaterCisless/igreater 1,2,3,4,5,6-Hexafluorocyclohexane (Clesssubgreater6less/subgreaterHlesssubgreater6less/subgreaterFlesssubgreater6less/subgreater) <p class="infolinks">[<a href="javascript:toggleInfo('Pratik2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Pratik2017','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>The Journal of Physical Chemistry C<br/>Vol. 121(3), pp. 1752-1762&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acs.jpcc.6b11521">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Pratik2017" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The recently synthesized all-cis 1,2,3,4,5,6-hexafluorocyclohexane (1) has a large dipole moment (6.2 D) and uniaxial facial polarization. Based on density functional theory (DFT) calculations, it is shown that both the “positive” and “negative” surfaces of 1 can recognize flat aromatic molecules (X, X = benzene, pyrene, and coronene), 2D materials (graphene), and their fully hydrogenated analogues through attractive noncovalent interactions. 1 can be sandwiched between graphene and graphane layers, where the enhanced polarity of the axial C—H and C—F bonds leads to the formation of an unusual “triple-decker” complex. Upon adsorption with 1, the band gap of graphane reduces from 3.40 to 2.05 eV, which might be useful for visible-light energy-conversion applications. We demonstrate the controlled tuning of the structural and electronic properties in 1-benzene, 1-cyclohexane, and benzene-1-cyclohexane complexes by the application of an external electric field along the polarization axis. The extended analogue of 1, hydrofluorinated graphene (HFG), which has semiconducting properties (band gap ≈ 3.0 eV), can form strong C—H···F—C interlayer interactions with graphane to form a stable, metallic bilayer. Our calculations show that the two-dimensional HFG can be realized through the high-pressure topochemical condensation of monofluoroacetylene (C2HF) for which the barrier of activation is 18.7 kcal/mol.</td>
+</tr>
+<tr id="bib_Pratik2017" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Pratik2017,
+  author = {Saied Md Pratik and A. Nijamudheen and Ayan Datta},
+  title = {Design of van der Waals Two-Dimensional Heterostructures from Facially Polarized Janus All-lessigreaterCisless/igreater 1,2,3,4,5,6-Hexafluorocyclohexane (Clesssubgreater6less/subgreaterHlesssubgreater6less/subgreaterFlesssubgreater6less/subgreater)},
+  journal = {The Journal of Physical Chemistry C},
+  publisher = {American Chemical Society (ACS)},
+  year = {2017},
+  volume = {121},
+  number = {3},
+  pages = {1752--1762},
+  doi = {https://doi.org/10.1021/acs.jpcc.6b11521}
+}
+</pre></td>
+</tr>
+<tr id="Ramadan2018" class="entry">
+	<td>Ramadan, F.-Z., Ouarrad, H. and Drissi, L.B.</td>
+	<td>Tuning Optoelectronic Properties of the Graphene-Based Quantum Dots Clesssubgreater16&ndash;lessigreaterxless/igreaterless/subgreaterSilesssubgreaterlessigreaterxless/igreaterless/subgreaterHlesssubgreater10less/subgreater Family <p class="infolinks">[<a href="javascript:toggleInfo('Ramadan2018','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Ramadan2018','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>The Journal of Physical Chemistry A<br/>Vol. 122(22), pp. 5016-5025&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acs.jpca.8b02704">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Ramadan2018" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The electronic and optical properties of graphene-based quantum dots (QDs) are investigated using DFT and many-body perturbation theory. Formation energy, hardeness and electrophilicity show that all structures, from pyrene to silicene QD passing through 15 CSi QD configurations, are energetically and chemically stable. It is also found that they are reactive which implies their favorable character for the possible electronic transport and conductivity. The electronic and optical properties are very sensitive to the number and position of the substituted silicon atoms as well as the directions of the light polarization. Moreover, quantum confinement effects make the exciton binding energy of CSi quantum dots larger than those of their higher dimensional allotropes such as silicene, graphene, and SiC sheet and nanotube. It is also higher those of other shapes of quantum dots like hexagonal graphene QDs and can be tailored from the ultraviolet region to the visible one. The values of the singlet–triplet splitting determined for the X- and Y-light polarized indicate that all configurations have a high fluorescence quantum yield compared to the yield of typical semiconductors, which makes them very promising for various applications such as the light-emitting diode material and nanomedicine.</td>
+</tr>
+<tr id="bib_Ramadan2018" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Ramadan2018,
+  author = {F-Z. Ramadan and H. Ouarrad and L. B. Drissi},
+  title = {Tuning Optoelectronic Properties of the Graphene-Based Quantum Dots Clesssubgreater16&ndash;lessigreaterxless/igreaterless/subgreaterSilesssubgreaterlessigreaterxless/igreaterless/subgreaterHlesssubgreater10less/subgreater Family},
+  journal = {The Journal of Physical Chemistry A},
+  publisher = {American Chemical Society (ACS)},
+  year = {2018},
+  volume = {122},
+  number = {22},
+  pages = {5016--5025},
+  doi = {https://doi.org/10.1021/acs.jpca.8b02704}
+}
+</pre></td>
+</tr>
+<tr id="RefugioCuevasFlores2017" class="entry">
+	<td>del Refugio Cuevas-Flores, M., Garcia-Revilla, M.A. and Bartolomei, M.</td>
+	<td>Noncovalent interactions between cisplatin and graphene prototypes <p class="infolinks">[<a href="javascript:toggleInfo('RefugioCuevasFlores2017','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('RefugioCuevasFlores2017','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Journal of Computational Chemistry<br/>Vol. 39(2), pp. 71-80&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1002/jcc.24920">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_RefugioCuevasFlores2017" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Cisplatin (CP) has been widely used as an anticancer drug for more than 30 years despite severe side effects due to its low bioavailability and poor specificity. For this reason, it is paramount to study and design novel nanomaterials to be used as vectors capable to effectively deliver the drug to the biological target. The CP square-planar geometry, together with its low water solubility, suggests that it could be possibly easily adsorbed on 2D graphene nanostructures through the interaction with the related highly conjugated π-electron system. In this work, pyrene has been first selected as the minimum approximation to the graphene plane, which allows to properly study the noncovalent interactions determining the CP adsorption. In particular, electronic structure calculations at the MP2C and DFT-SAPT levels of theory have allowed to obtain benchmark interaction energies for some limiting configurations of the CP–pyrene complex, as well as to assess the role of the different contributions to the total interaction: it has been found that the parallel configurations of the aggregate are mainly stabilized around the minimum region by dispersion, in a similar way as for complexes bonded through π-π interactions. Then, the benchmark interaction energies have been used to test corresponding estimations obtained within the less expensive DFT to validate an optimal exchange-correlation functional which includes corrections to take properly into account for the dispersion contribution. Reliable DFT interaction energies have been therefore obtained for CP adsorbed on graphene prototypes of increasing size, ranging from coronene, ovalene, and up to C150H30. Finally, DFT geometry optimizations and frequency calculations have also allowed a reliable estimation of the adsorption enthalpy of CP on graphene, which is found particularly favorable (about −20 kcal/mol at 298 K and 1 bar) being twice that estimated for the corresponding benzene adsorption.</td>
+</tr>
+<tr id="bib_RefugioCuevasFlores2017" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{RefugioCuevasFlores2017,
+  author = {Ma del Refugio Cuevas-Flores and Marco Antonio Garcia-Revilla and Massimiliano Bartolomei},
+  title = {Noncovalent interactions between cisplatin and graphene prototypes},
+  journal = {Journal of Computational Chemistry},
+  publisher = {Wiley},
+  year = {2017},
+  volume = {39},
+  number = {2},
+  pages = {71--80},
+  doi = {https://doi.org/10.1002/jcc.24920}
+}
+</pre></td>
+</tr>
+<tr id="Saha2021" class="entry">
+	<td>Saha, B. and Bhattacharyya, P.K.</td>
+	<td>1 Role of heteroatoms and substituents on the structure, reactivity, aromaticity, and absorption spectra of pyrene: a density functional theory study <p class="infolinks">[<a href="javascript:toggleInfo('Saha2021','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Saha2021','comment')">Comment</a>] [<a href="javascript:toggleInfo('Saha2021','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>Theoretical and Computational Chemistry Aspects, pp. 1-20&nbsp;</td>
+	<td>incollection</td>
+	<td><a href="https://doi.org/10.1515/9783110739763-001">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Saha2021" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Effect of heteroatoms viz. BN and substituents viz. -Me (methyl), -OH (hydroxyl), -NH2 (amine), -COOH (carboxyl), and -CN (cyano) on the structural parameters, global reactivity, aromaticity, and UV-visible spectra of pyrene are studied with the help of density functional theory (DFT). Global reactivity parameters such as global hardness (η) and electrophilicity (ω) are calculated using density functional reactivity theory (DFRT). Time dependent density functional theory (TD-DFT) is explored for interpreting the UV-visible absorption spectra. Aromaticity of the pyrene rings are predicted from the nucleus independent chemical shift (NICS) values. Presence of BN unit and substituent induces reasonable impact on the studied parameters. The observed absorption spectra lie predominantly within the UV-region (both blue and red shifts are observed in presence of BN and substituent). HOMO energy and absorption spectra are affected nominally in solvent phase.</td>
+</tr>
+<tr id="rev_Saha2021" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: Effect of heteroatoms viz. BN and substituents viz. -Me (methyl), -OH (hydroxyl), -NH2 (amine), -COOH (carboxyl), and -CN (cyano) on the structural parameters, global reactivity, aromaticity, and UV-visible spectra of pyrene are studied with the help of density functional theory (DFT).</td>
+</tr>
+<tr id="bib_Saha2021" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@incollection{Saha2021,
+  author = {Bapan Saha and Pradip Kumar Bhattacharyya},
+  title = {1 Role of heteroatoms and substituents on the structure, reactivity, aromaticity, and absorption spectra of pyrene: a density functional theory study},
+  booktitle = {Theoretical and Computational Chemistry Aspects},
+  publisher = {De Gruyter},
+  year = {2021},
+  pages = {1--20},
+  doi = {https://doi.org/10.1515/9783110739763-001}
+}
+</pre></td>
+</tr>
+<tr id="Silva2016" class="entry">
+	<td>Silva, N.J., Machado, F.B.C., Lischka, H. and Aquino, A.J.A.</td>
+	<td>uppi&ndash;uppi stacking between polyaromatic hydrocarbon sheets beyond dispersion interactions <p class="infolinks">[<a href="javascript:toggleInfo('Silva2016','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Silva2016','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>Physical Chemistry Chemical Physics<br/>Vol. 18(32), pp. 22300-22310&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1039/c6cp03749f">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Silva2016" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: High level ab initio calculations ranging from coupled cluster methods including explicitly correlated approaches to standard second order Møller–Plesset theory using spin scaling (SOS-MP2) have been performed on sandwich and slipped parallel dimer structures of a series of quasi one-dimensional acenes and on two-dimensional sheets containing the pyrene to coronene series encircled with two layers of benzene rings. Sandwich (graphitic AA type) and slipped parallel (AB type) structures were considered and, within the given symmetry restrictions, full geometry optimizations were performed. Basis set superposition effects have been considered. The computed geometries show a significant biconcave deviation of the two-dimensional sheets from planarity with the central intersheet C⋯C distances considerably smaller that van der Waals distances. The computed intersheet binding energy per carbon atom extrapolated for N → ∞ of −74.3 meV (1.713 kcal mol−1) per atom agrees quite well with an experimental defoliation energy of −52 meV (1.199 kcal mol−1) per atom (−67 meV (1.545 kcal mol−1) per carbon atom without corrections for H binding contributions) for polyaromatic hydrocarbons (PAHs) from graphite. A limited investigation of density functional theory (DFT) calculations using empirical dispersion contributions has been performed also showing a significant underbinding character of the D3 method. For most of the DFT variants investigated the graphene sheet models retain a quasi-planar structure in strong contrast to the aforementioned SOS-MP2 results.</td>
+</tr>
+<tr id="bib_Silva2016" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Silva2016,
+  author = {Nadeesha J. Silva and Francisco B. C. Machado and Hans Lischka and Adelia J. A. Aquino},
+  title = {uppi&ndash;uppi stacking between polyaromatic hydrocarbon sheets beyond dispersion interactions},
+  journal = {Physical Chemistry Chemical Physics},
+  publisher = {Royal Society of Chemistry (RSC)},
+  year = {2016},
+  volume = {18},
+  number = {32},
+  pages = {22300--22310},
+  doi = {https://doi.org/10.1039/c6cp03749f}
+}
+</pre></td>
+</tr>
+<tr id="Thodkar2021" class="entry">
+	<td>Thodkar, K., Cazade, P.-A., Bergmann, F., Lopez-Calle, E., Thompson, D. and Heindl, D.</td>
+	<td>Self-Assembled Pyrene Stacks and Peptide Monolayers Tune the Electronic Properties of Functionalized Electrolyte-Gated Graphene Field-Effect Transistors <p class="infolinks">[<a href="javascript:toggleInfo('Thodkar2021','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Thodkar2021','bibtex')">BibTeX</a>]</p></td>
+	<td>2021</td>
+	<td>ACS Applied Materials &amp;ampmathsemicolon Interfaces<br/>Vol. 13(7), pp. 9134-9142&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acsami.0c18485">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Thodkar2021" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Aromatic molecules such as pyrenes are a unique class of building units for graphene functionalization, forming highly ordered π–π stacks while peptides provide more complex, biocompatible linkers. Understanding the adsorption and stacking behavior of these molecules and their influence on material properties is an essential step in enabling highly repeatable 2D material-based applications, such as biosensors, gas sensors, and solar cells. In this work, we characterize pyrene and peptide self-assembly on graphene substrates using fluorescence microscopy, atomic force microscopy and electrolyte-gated field-effect measurements supported by quantum mechanical calculations. We find distinct binding and assembly modes for pyrenes versus peptides with corresponding distinct electronic signatures in their characteristic charge neutrality point and field-effect slope responses. Our data demonstrates that pyrene- and peptide-based self-assembly platforms can be highly beneficial for precisely customizing graphene electronic properties for desired device technologies such as transport-based biosensing graphene field-effect transistors.</td>
+</tr>
+<tr id="bib_Thodkar2021" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Thodkar2021,
+  author = {Kishan Thodkar and Pierre-Andre Cazade and Frank Bergmann and Eloisa Lopez-Calle and Damien Thompson and Dieter Heindl},
+  title = {Self-Assembled Pyrene Stacks and Peptide Monolayers Tune the Electronic Properties of Functionalized Electrolyte-Gated Graphene Field-Effect Transistors},
+  journal = {ACS Applied Materials &amp;ampmathsemicolon Interfaces},
+  publisher = {American Chemical Society (ACS)},
+  year = {2021},
+  volume = {13},
+  number = {7},
+  pages = {9134--9142},
+  doi = {https://doi.org/10.1021/acsami.0c18485}
+}
+</pre></td>
+</tr>
+<tr id="Vincent2014" class="entry">
+	<td>Vincent, M.A. and Hillier, I.H.</td>
+	<td>Accurate Prediction of Adsorption Energies on Graphene, Using a Dispersion-Corrected Semiempirical Method Including Solvation <p class="infolinks">[<a href="javascript:toggleInfo('Vincent2014','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Vincent2014','bibtex')">BibTeX</a>]</p></td>
+	<td>2014</td>
+	<td>Journal of Chemical Information and Modeling<br/>Vol. 54(8), pp. 2255-2260&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/ci5003729">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Vincent2014" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The accurate prediction of the adsorption energies of unsaturated molecules on graphene in the presence of water is essential for the design of molecules that can modify its properties and that can aid its processability. We here show that a semiempirical MO method corrected for dispersive interactions (PM6-DH2) can predict the adsorption energies of unsaturated hydrocarbons and the effect of substitution on these values to an accuracy comparable to DFT values and in good agreement with the experiment. The adsorption energies of TCNE, TCNQ, and a number of sulfonated pyrenes are also predicted, along with the effect of hydration using the COSMO model.</td>
+</tr>
+<tr id="bib_Vincent2014" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Vincent2014,
+  author = {Mark A. Vincent and Ian H. Hillier},
+  title = {Accurate Prediction of Adsorption Energies on Graphene, Using a Dispersion-Corrected Semiempirical Method Including Solvation},
+  journal = {Journal of Chemical Information and Modeling},
+  publisher = {American Chemical Society (ACS)},
+  year = {2014},
+  volume = {54},
+  number = {8},
+  pages = {2255--2260},
+  doi = {https://doi.org/10.1021/ci5003729}
+}
+</pre></td>
+</tr>
+<tr id="Yang2020" class="entry">
+	<td>Yang, W., Hadibarata, T., Mahmoud, A.H. and Yuniarto, A.</td>
+	<td>Biotransformation of pyrene in soil in the presence of earthworm Eisenia fetida <p class="infolinks">[<a href="javascript:toggleInfo('Yang2020','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Yang2020','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>Environmental Technology &amp;ampmathsemicolon Innovation<br/>Vol. 18, pp. 100701&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1016/j.eti.2020.100701">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Yang2020" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Pyrene, a toxic four benzene ring polycyclic aromatic hydrocarbons (PAHs) that persists in the environment, is highly resistant to degradation. Hence, this study aims to investigate the pyrene degradation by the combination of earthworm (Eisenia fetida) and some microbes in the soil. The artificially contaminated soil (200 g) was prepared in a container box by the addition of pyrene and combined with the addition of the earthworms and some microbes. The results showed that no mortality of earthworms in all soil conditions. The largest amount of pyrene (68.7%) was removed by earthworm microbes in the unsterilized soil. Twelve enzymes were produced such as peroxidase, laccase, invertase, glucosidase, phosphatase, phytase, urease, hydrolase, chitinase, nitrogenase, aminopeptidase, and arylsulfatase. The combination of earthworm and microbes transformed pyrene to protocatechuic acid via pyrene-4,5-dione, phenanthrene-4,5-dicarboxylic acid, and phenanthrene-4-carboxylic acid. But, these compounds were not confirmed in our extract.</td>
+</tr>
+<tr id="bib_Yang2020" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Yang2020,
+  author = {Wenxia Yang and Tony Hadibarata and Ahmed Hossam Mahmoud and Adhi Yuniarto},
+  title = {Biotransformation of pyrene in soil in the presence of earthworm Eisenia fetida},
+  journal = {Environmental Technology &amp;ampmathsemicolon Innovation},
+  publisher = {Elsevier BV},
+  year = {2020},
+  volume = {18},
+  pages = {100701},
+  doi = {https://doi.org/10.1016/j.eti.2020.100701}
+}
+</pre></td>
+</tr>
+<tr id="Zatsikha2020" class="entry">
+	<td>Zatsikha, Y.V., Blesener, T.S., King, A.J., Healy, A.T., Goff, P.C., Didukh, N.O., Blank, D.A., Kovtun, Y.P. and Nemykin, V.N.</td>
+	<td>Fully Conjugated Pyrene&ndash;BODIPY and Pyrene&ndash;BODIPY&ndash;Ferrocene Dyads and Triads: Synthesis, Characterization, and Selective Noncovalent Interactions with Nanocarbon Materials <p class="infolinks">[<a href="javascript:toggleInfo('Zatsikha2020','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Zatsikha2020','comment')">Comment</a>] [<a href="javascript:toggleInfo('Zatsikha2020','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>The Journal of Physical Chemistry B<br/>Vol. 125(1), pp. 360-371&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1021/acs.jpcb.0c10074">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_Zatsikha2020" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Several pyrene–boron-dipyrromethene (BODIPY) and pyrene–BODIPY–ferrocene derivatives with a fully conjugated pyrene fragment appended to the α-position(s) of the BODIPY core have been prepared by Knoevenagel condensation reaction and characterized by one-dimensional (1D) and two-dimensional (2D) nuclear magnetic resonance (NMR), UV–vis, fluorescence spectroscopy, high-resolution mass spectrometry as well as X-ray crystallography. The redox properties of new donor–acceptor BODIPY dyads and triads were studied by electrochemical (cyclic voltammetry (CV) and differential pulse voltammetry (DPV)) and spectroelectrochemical approaches. Formation of weakly bonded noncovalent complexes between the new pyrene–BODIPYs and nanocarbon materials (C60, C70, single-walled carbon nanotube (SWCNT), and graphene) was studied by UV–vis, steady-state fluorescent, and time-resolved transient absorption spectroscopy. UV–vis and fluorescent spectroscopy are indicative of the much stronger and selective interaction between new dyes and (6,5)-SWCNT as well as graphene compared to that of C60 and C70 fullerenes. In agreement with these data, transient absorption spectroscopy provided no evidence for any significant change in excited-state lifetime or photoinduced charge transfer between pyrene–BODIPYs and C60 or C70 fullerenes when the pyrene–BODIPY chromophores were excited into the lowest-energy singlet excited state. Density functional theory (DFT) and time-dependent DFT (TDDFT) calculations suggest that the pyrene fragments are fully conjugated into the π-system of BODIPY core, which correlates well with the experimental data.</td>
+</tr>
+<tr id="rev_Zatsikha2020" class="comment noshow">
+	<td colspan="6"><b>Comment</b>: Formation of weakly bonded noncovalent complexes between the new pyrene-BODIPYs and nanocarbon materials (C60, C70, single-walled carbon nanotube (SWCNT), and graphene) was studied by UV-vis, steady-state fluorescent, and time-resolved transient absorption spectroscopy.<p>Density functional theory (DFT) and time-dependent DFT (TDDFT) calculations suggest that the pyrene fragments are fully conjugated into the π-system of BODIPY core, which correlates well with the experimental data.</td>
+</tr>
+<tr id="bib_Zatsikha2020" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{Zatsikha2020,
+  author = {Yuriy V. Zatsikha and Tanner S. Blesener and Alex J. King and Andrew T. Healy and Philip C. Goff and Natalia O. Didukh and David A. Blank and Yuriy P. Kovtun and Victor N. Nemykin},
+  title = {Fully Conjugated Pyrene&ndash;BODIPY and Pyrene&ndash;BODIPY&ndash;Ferrocene Dyads and Triads: Synthesis, Characterization, and Selective Noncovalent Interactions with Nanocarbon Materials},
+  journal = {The Journal of Physical Chemistry B},
+  publisher = {American Chemical Society (ACS)},
+  year = {2020},
+  volume = {125},
+  number = {1},
+  pages = {360--371},
+  doi = {https://doi.org/10.1021/acs.jpcb.0c10074}
+}
+</pre></td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="http://jabref.sourceforge.net">JabRef</a> on 24/10/2022.</small>
+</footer>
+<!-- file generated by JabRef -->
+</body>
+</html>
